@@ -6,10 +6,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./kencana.db")
-# Beberapa penyedia (termasuk Railway versi lama) memakai skema "postgres://",
-# yang tidak dikenali SQLAlchemy 2.x.
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+# Railway memberi URL "postgresql://" (kadang "postgres://") tanpa nama driver. Driver
+# default SQLAlchemy berubah antarversi (2.1 memakai psycopg v3), jadi tetapkan psycopg2
+# secara eksplisit sesuai paket di requirements.txt.
+for _skema in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_skema):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_skema):]
+        break
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 # pool_pre_ping: buang koneksi Postgres yang sudah diputus server sebelum dipakai.

@@ -1,6 +1,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
-sqlalchemy>=2.0
+sqlalchemy>=2.0,<2.1
 pandas>=2.0
 numpy>=1.26
 scikit-learn>=1.4
