@@ -99,21 +99,24 @@ class JenisPaket(Base):
 
 class Transaksi(Base):
     __tablename__ = "transaksi"
+    # Index hanya di kolom yang selektif (PK, tanggal, id_rute). Kolom seperti layanan/channel
+    # hanya punya 2-3 nilai, jadi index-nya tidak dipakai query tapi memakan belasan MB per
+    # index dan memperbesar WAL saat bulk insert (volume Postgres trial Railway hanya ~0,5 GB).
     id_transaksi = Column(String, primary_key=True)   # kode booking (KCN-xxxxx / SLOxxxxxx dst)
     tanggal = Column(Date, nullable=False, index=True)
     hari = Column(String)
     jam_keberangkatan = Column(String, nullable=False)
     id_rute = Column(String, ForeignKey("rute.id_rute"), nullable=False, index=True)
     id_armada = Column(String, ForeignKey("armada.id_armada"), nullable=True)
-    cabang_asal = Column(String, nullable=False, index=True)
+    cabang_asal = Column(String, nullable=False)
     cabang_tujuan = Column(String, nullable=False)
-    layanan = Column(String, nullable=False, index=True)
-    jenis_transaksi = Column(String, nullable=False, index=True)  # Penumpang / Paket
+    layanan = Column(String, nullable=False)
+    jenis_transaksi = Column(String, nullable=False)  # Penumpang / Paket
     id_member = Column(String, ForeignKey("member.id_member"), nullable=True)
     id_jenis_paket = Column(String, ForeignKey("jenis_paket.id_jenis_paket"), nullable=True)
     jumlah_unit = Column(Float, nullable=False)  # jml orang ATAU berat kg
     satuan = Column(String, nullable=False)
-    channel_pemesanan = Column(String, nullable=False, index=True)
+    channel_pemesanan = Column(String, nullable=False)
     harga_satuan = Column(Float, nullable=False)
     diskon_per_tiket = Column(Float, default=0)
     total_harga = Column(Float, nullable=False)

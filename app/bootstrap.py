@@ -12,7 +12,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import func, text
 from app.core.database import SessionLocal
 from app.core.migrate import jalankan_migrasi
 from app.models.models import Armada, Cabang, Jadwal, JenisPaket, Member, Pengguna, Rute, Transaksi
@@ -31,6 +31,11 @@ def _hapus_data_referensi() -> None:
     db = SessionLocal()
     try:
         db.query(Pengguna).update({Pengguna.id_cabang: None}, synchronize_session=False)
+        if db.bind.dialect.name == "postgresql":
+            # DELETE di Postgres hanya menandai baris sebagai mati — ruang disk tidak kembali
+            # sampai VACUUM. TRUNCATE langsung membebaskan ruangnya. (Tabel transaksi tidak
+            # direferensikan tabel lain, jadi aman di-TRUNCATE sendiri.)
+            db.execute(text("TRUNCATE TABLE transaksi"))
         for model in (Transaksi, Jadwal, Armada, Rute, Member, JenisPaket, Cabang):
             db.query(model).delete(synchronize_session=False)
         db.commit()
