@@ -8,6 +8,7 @@ import sys
 import random
 import pandas as pd
 from datetime import datetime
+from sqlalchemy import text
 from app.core.database import engine, SessionLocal, Base
 from app.models.models import Cabang, Rute, Armada, Member, JenisPaket, Transaksi
 
@@ -15,6 +16,23 @@ NAMA_DEPAN = ["Ahmad", "Siti", "Budi", "Dewi", "Agus", "Rina", "Hendro", "Ratna"
               "Bambang", "Wahyuni", "Fauzi", "Kartika", "Nugroho", "Putri", "Santoso", "Lestari"]
 NAMA_BELAKANG = ["Wijaya", "Nurhaliza", "Prabowo", "Santoso", "Kartika", "Wahyuni",
                  "Nugroho", "Lestari", "Hidayat", "Susanti", "Setiawan", "Permata"]
+
+
+CHECKPOINT_TIAP = 50_000  # baris
+
+
+def _checkpoint(db):
+    """PostgreSQL: paksa CHECKPOINT agar file WAL lama bisa didaur ulang. Tanpa ini, WAL
+    dari bulk insert menumpuk dan bisa memenuhi volume kecil (mis. 0,5 GB di trial Railway).
+    Diabaikan untuk SQLite atau bila user database tidak punya hak CHECKPOINT."""
+    if db.bind.dialect.name != "postgresql":
+        return
+    try:
+        db.execute(text("CHECKPOINT"))
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        print(f"  (CHECKPOINT dilewati: {e.__class__.__name__})", flush=True)
 
 
 def buat_nama_acak(seed_str):
@@ -137,8 +155,10 @@ def main(csv_path, reset=True):
             db.bulk_save_objects(records)
             db.commit()
             total += len(records)
-            print(f"  ... {total:,} baris dimuat")
+            print(f"  ... {total:,} baris dimuat", flush=True)
             records = []
+            if total % CHECKPOINT_TIAP == 0:
+                _checkpoint(db)
     if records:
         db.bulk_save_objects(records)
         db.commit()
