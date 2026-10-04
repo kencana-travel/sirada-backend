@@ -1,4 +1,6 @@
+import logging
 import os
+import threading
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import config
@@ -40,6 +42,34 @@ app.include_router(eda.router)
 app.include_router(master.router)
 app.include_router(laporan.router)
 app.include_router(data_import.router)
+
+
+def _panaskan_cache():
+    """Jalankan analisis berat sekali di thread latar setelah server hidup, supaya halaman
+    Performa/Segmentasi/Forecasting dan laporan ringkasan tidak menunggu lama saat pertama
+    dibuka. Hasilnya disimpan di cache memori masing-masing service. Aman bila gagal."""
+    from app.core.database import SessionLocal
+    from app.models.models import Rute
+    from app.services import forecasting_service, performa_service, segmentasi_service
+
+    log = logging.getLogger("warmup")
+    performa_service.panaskan_cache()
+    db = SessionLocal()
+    try:
+        segmentasi_service.jalankan_rfm_kmeans(db)
+        for (nama_rute,) in db.query(Rute.nama_rute).all():
+            forecasting_service.jalankan_forecast(db, nama_rute, horizon_hari=30, pakai_kalender=True)
+        log.info("Cache analisis siap.")
+    except Exception:  # noqa: BLE001 - hanya optimasi
+        log.exception("Pemanasan cache gagal (tidak memengaruhi API).")
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def _mulai_pemanasan():
+    if os.getenv("PANASKAN_CACHE", "1") == "1":
+        threading.Thread(target=_panaskan_cache, daemon=True).start()
 
 
 @app.get("/")

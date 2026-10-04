@@ -57,13 +57,23 @@ Dokumentasi interaktif lengkap (Swagger) otomatis tersedia di `/docs` setelah se
 
 ## 4. Algoritma yang Dipakai (sesuai kesepakatan sebelumnya)
 
-- **Segmentasi Pasar**: RFM (Recency/Frequency/Monetary) dihitung per pelanggan,
-  lalu di-cluster pakai **K-Means** (scikit-learn), diberi label Tier Platinum/Gold/Silver/Calon Member
-  berdasarkan ranking nilai monetary tiap cluster.
-- **Forecasting Demand**: **ARIMA(p, d, q)** (statsmodels) per rute. Nilai d ditentukan dari uji
-  ADF (differencing maks. 2 kali), p dan q dipilih dari kandidat 0-2 dengan AIC terkecil.
-  Akurasi dihitung lewat train/test split 14 hari terakhir (MAE, RMSE, MAPE).
-- **Performa Rute**: agregasi statistik deskriptif (total trip, load factor, perbandingan VIP vs Reguler).
+- **Import & Cleaning** (`/api/import`): upload CSV, validasi kolom wajib, buang baris kosong/tidak
+  valid, hapus duplikat (di file & yang sudah ada di DB), lalu simpan + catat di riwayat import.
+- **EDA** (`/api/eda`): statistik deskriptif, tren bulanan, pola hari, efek akhir pekan/libur
+  (tabel `kalender`), distribusi per rute/layanan/channel/member.
+- **Segmentasi Pasar**: RFM per pelanggan -> log(1+x) -> Min-Max -> **K-Means** K = 2..8.
+  K dipilih dari Silhouette tertinggi (Elbow & DBI ikut dilaporkan); valid bila Silhouette >= 0,5.
+- **Forecasting Demand**: per rute dibandingkan **ARIMA** (d dari uji ADF, p/q dari AIC),
+  **SARIMA** (musiman 7 hari), **SARIMAX** (+ dummy kalender: akhir pekan, libur nasional, libur
+  sekolah, sekitar libur) dan **Holt-Winters**. Diuji di 28 hari terakhir; model dengan MAPE terkecil
+  dipilih (kategori Lewis; valid bila MAPE <= 20%).
+- **Performa Rute & Cabang**: jumlah perjalanan, penumpang, pendapatan, okupansi rata-rata per
+  perjalanan, status Tinggi/Sedang/Rendah, filter periode.
+- **Laporan** (`/api/laporan`): PDF/Excel (ringkasan, performa, segmentasi, forecasting) dan alur
+  permintaan laporan Owner/Kepala Outlet -> diproses Admin.
+- **Data Master** (`/api/master`): CRUD rute, armada, jadwal (Kepala Outlet: cabangnya saja).
+- Kepala Outlet hanya melihat data cabangnya (`get_cabang_scope`). Analisis berat di-cache di memori
+  dan dipanaskan di thread latar saat server start (`PANASKAN_CACHE=0` untuk mematikan).
 
 ## 5. Role & Akses (sesuai Use Case Diagram)
 
