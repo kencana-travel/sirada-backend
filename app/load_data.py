@@ -1,16 +1,18 @@
 """
 Load data transaksi (hasil generator sintetis sebelumnya) ke database,
-dinormalisasi sesuai skema ERD: Cabang, Rute, Armada, Member, JenisPaket, Transaksi.
+dinormalisasi sesuai skema ERD: Cabang, Rute, Armada, Member, JenisPaket, Kalender, Jadwal,
+Transaksi.
 
 Jalankan: python -m app.load_data /path/ke/kencana_transaksi_gabungan.csv
 """
 import sys
 import random
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import text
 from app.core.database import engine, SessionLocal, Base
 from app.models.models import Cabang, Rute, Armada, Member, JenisPaket, Transaksi
+from app.services.referensi_service import pastikan_jadwal, pastikan_kalender
 
 NAMA_DEPAN = ["Ahmad", "Siti", "Budi", "Dewi", "Agus", "Rina", "Hendro", "Ratna",
               "Bambang", "Wahyuni", "Fauzi", "Kartika", "Nugroho", "Putri", "Santoso", "Lestari"]
@@ -114,7 +116,15 @@ def main(csv_path, reset=True):
 
     db.commit()
 
-    # --- 6. Transaksi (bulk insert, batched) ---
+    # --- 6. Kalender & Jadwal (dirujuk foreign key transaksi, jadi diisi lebih dulu) ---
+    tanggal = pd.to_datetime(df["Tanggal"])
+    pastikan_kalender(db, tanggal.min().date(), tanggal.max().date() + timedelta(days=400))
+    kombinasi = df[["Rute", "Jam Keberangkatan", "Layanan"]].drop_duplicates()
+    n_jadwal = pastikan_jadwal(db, ((rute_map[r], j, l) for r, j, l in kombinasi.itertuples(index=False)))
+    db.commit()
+    print(f"Kalender {tanggal.min().date()} s.d. +400 hari, Jadwal: {n_jadwal}")
+
+    # --- 7. Transaksi (bulk insert, batched) ---
     print("Memuat transaksi (bulk insert)...")
     records = []
     BATCH = 5000

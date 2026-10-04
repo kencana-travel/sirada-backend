@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import config
 from app.core.migrate import jalankan_migrasi
-from app.routers import auth, dashboard, transaksi, segmentasi, forecasting, performa, pengguna
+from app.routers import (auth, dashboard, transaksi, segmentasi, forecasting, performa, pengguna,
+                         eda, master, laporan, data_import)
 
 jalankan_migrasi()
 
@@ -35,6 +36,10 @@ app.include_router(segmentasi.router)
 app.include_router(forecasting.router)
 app.include_router(performa.router)
 app.include_router(pengguna.router)
+app.include_router(eda.router)
+app.include_router(master.router)
+app.include_router(laporan.router)
+app.include_router(data_import.router)
 
 
 @app.get("/")

@@ -1,8 +1,10 @@
 """
-Model tabel sesuai ERD & Class Diagram yang sudah disusun sebelumnya:
-Cabang, Rute, Armada, Jadwal, Member, JenisPaket, Transaksi, Pengguna (akun login).
+Model tabel sesuai ERD: Cabang, Rute, Armada, Jadwal, Kalender, Member, JenisPaket,
+Transaksi, ditambah tabel pendukung sistem: Pengguna, TokenPengguna, PermintaanLaporan,
+RiwayatImport.
 """
-from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Date, Boolean
+from sqlalchemy import (Column, String, Integer, Float, DateTime, ForeignKey, Date, Boolean,
+                        ForeignKeyConstraint, UniqueConstraint)
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime, timezone
@@ -59,7 +61,7 @@ class Rute(Base):
     id_rute = Column(String, primary_key=True, default=gen_id)
     nama_rute = Column(String, unique=True, nullable=False)  # e.g. "Solo->Semarang"
     cabang_asal = Column(String, ForeignKey("cabang.nama_cabang"), nullable=False)
-    cabang_tujuan = Column(String, nullable=False)
+    cabang_tujuan = Column(String, ForeignKey("cabang.nama_cabang"), nullable=False)
     layanan_tersedia = Column(String, nullable=False)  # "VIP" / "Reguler" / "VIP,Reguler"
 
 
@@ -74,12 +76,29 @@ class Armada(Base):
 
 
 class Jadwal(Base):
+    """Satu jadwal = satu kombinasi rute + jam keberangkatan + layanan. Transaksi merujuk ke
+    jadwal lewat foreign key gabungan (id_rute, jam_keberangkatan, layanan) supaya relasi ini
+    bisa ditambahkan ke database produksi tanpa menulis ulang seluruh tabel transaksi."""
     __tablename__ = "jadwal"
+    __table_args__ = (UniqueConstraint("id_rute", "jam_keberangkatan", "layanan",
+                                       name="uq_jadwal_rute_jam_layanan"),)
     id_jadwal = Column(String, primary_key=True, default=gen_id)
     id_rute = Column(String, ForeignKey("rute.id_rute"), nullable=False)
     jam_keberangkatan = Column(String, nullable=False)
     layanan = Column(String, nullable=False)
     hari_berlaku = Column(String, default="Setiap Hari")
+
+
+class Kalender(Base):
+    """Dimensi tanggal: hari, akhir pekan, libur nasional/cuti bersama, dan libur sekolah.
+    Dipakai sebagai variabel eksternal forecasting dan untuk EDA."""
+    __tablename__ = "kalender"
+    tanggal = Column(Date, primary_key=True)
+    hari = Column(String, nullable=False)
+    weekend = Column(Boolean, nullable=False, default=False)
+    libur_nasional = Column(Boolean, nullable=False, default=False)
+    libur_sekolah = Column(Boolean, nullable=False, default=False)
+    keterangan = Column(String, nullable=True)
 
 
 class Member(Base):
@@ -99,11 +118,17 @@ class JenisPaket(Base):
 
 class Transaksi(Base):
     __tablename__ = "transaksi"
+    __table_args__ = (
+        ForeignKeyConstraint(["id_rute", "jam_keberangkatan", "layanan"],
+                             ["jadwal.id_rute", "jadwal.jam_keberangkatan", "jadwal.layanan"],
+                             name="fk_transaksi_jadwal"),
+    )
     # Index hanya di kolom yang selektif (PK, tanggal, id_rute). Kolom seperti layanan/channel
     # hanya punya 2-3 nilai, jadi index-nya tidak dipakai query tapi memakan belasan MB per
     # index dan memperbesar WAL saat bulk insert (volume Postgres trial Railway hanya ~0,5 GB).
     id_transaksi = Column(String, primary_key=True)   # kode booking (KCN-xxxxx / SLOxxxxxx dst)
-    tanggal = Column(Date, nullable=False, index=True)
+    tanggal = Column(Date, ForeignKey("kalender.tanggal", name="fk_transaksi_kalender"),
+                     nullable=False, index=True)
     hari = Column(String)
     jam_keberangkatan = Column(String, nullable=False)
     id_rute = Column(String, ForeignKey("rute.id_rute"), nullable=False, index=True)
@@ -129,3 +154,37 @@ class Transaksi(Base):
     armada = relationship("Armada")
     member = relationship("Member")
     jenis_paket_rel = relationship("JenisPaket")
+
+
+class PermintaanLaporan(Base):
+    """Owner / Kepala Outlet mengajukan permintaan laporan strategis, Admin memprosesnya."""
+    __tablename__ = "permintaan_laporan"
+    id_permintaan = Column(String, primary_key=True, default=gen_id)
+    id_pemohon = Column(String, ForeignKey("pengguna.id_pengguna"), nullable=False, index=True)
+    jenis_laporan = Column(String, nullable=False)  # ringkasan | segmentasi | forecasting | performa
+    tanggal_mulai = Column(Date, nullable=True)
+    tanggal_selesai = Column(Date, nullable=True)
+    cabang = Column(String, ForeignKey("cabang.nama_cabang"), nullable=True)
+    catatan = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="menunggu")  # menunggu | selesai | ditolak
+    catatan_admin = Column(String, nullable=True)
+    diproses_oleh = Column(String, ForeignKey("pengguna.id_pengguna"), nullable=True)
+    dibuat_pada = Column(DateTime, nullable=False, default=utcnow)
+    diproses_pada = Column(DateTime, nullable=True)
+
+
+class RiwayatImport(Base):
+    """Log setiap import CSV beserta hasil data cleaning-nya."""
+    __tablename__ = "riwayat_import"
+    id_import = Column(String, primary_key=True, default=gen_id)
+    nama_file = Column(String, nullable=False)
+    diimport_oleh = Column(String, ForeignKey("pengguna.id_pengguna"), nullable=True)
+    waktu = Column(DateTime, nullable=False, default=utcnow)
+    baris_sumber = Column(Integer, nullable=False, default=0)
+    baris_duplikat = Column(Integer, nullable=False, default=0)      # duplikat di dalam file
+    baris_sudah_ada = Column(Integer, nullable=False, default=0)     # kode transaksi sudah di DB
+    baris_kosong = Column(Integer, nullable=False, default=0)        # kolom wajib kosong
+    baris_tidak_valid = Column(Integer, nullable=False, default=0)   # format/nilai tidak valid
+    baris_dimuat = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="berhasil")      # berhasil | gagal
+    catatan = Column(String, nullable=True)

@@ -3,11 +3,18 @@
 - Membuat tabel baru yang belum ada (mis. token_pengguna).
 - Menambah kolom baru di tabel pengguna pada database lama. Akun lama otomatis
   dianggap sudah terverifikasi & aktif lewat server_default kolomnya.
+- Mengisi tabel kalender & jadwal dari transaksi yang sudah ada, lalu (khusus PostgreSQL)
+  menambahkan foreign key transaksi -> kalender, transaksi -> jadwal, rute -> cabang tujuan.
+  Foreign key hanya divalidasi (dibaca), tabel transaksi tidak ditulis ulang, jadi tidak
+  menambah pemakaian disk.
 Aman dijalankan berulang kali."""
 import logging
-from sqlalchemy import inspect, text
-from app.core.database import Base, engine
+from datetime import timedelta
+from sqlalchemy import func, inspect, select, text
+from app.core.database import Base, SessionLocal, engine
 from app.models import models  # noqa: F401  (registrasi semua model ke Base.metadata)
+from app.models.models import Transaksi
+from app.services.referensi_service import pastikan_jadwal, pastikan_kalender
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +33,55 @@ INDEX_DIHAPUS = [
 ]
 
 
+# Kalender diisi sampai setahun lebih setelah transaksi terakhir supaya forecasting punya
+# variabel kalender untuk periode yang diramal.
+KALENDER_KE_DEPAN_HARI = 400
+
+FK_POSTGRES = {
+    "transaksi": [
+        ("fk_transaksi_kalender", "(tanggal) REFERENCES kalender (tanggal)"),
+        ("fk_transaksi_jadwal",
+         "(id_rute, jam_keberangkatan, layanan) REFERENCES jadwal (id_rute, jam_keberangkatan, layanan)"),
+    ],
+    "rute": [("fk_rute_cabang_tujuan", "(cabang_tujuan) REFERENCES cabang (nama_cabang)")],
+}
+
+
+def isi_referensi_dari_transaksi():
+    """Lengkapi kalender & jadwal untuk transaksi yang sudah ada."""
+    db = SessionLocal()
+    try:
+        mulai, akhir = db.execute(select(func.min(Transaksi.tanggal), func.max(Transaksi.tanggal))).one()
+        if mulai is None:
+            return
+        n_kal = pastikan_kalender(db, mulai, akhir + timedelta(days=KALENDER_KE_DEPAN_HARI))
+        kombinasi = db.execute(select(Transaksi.id_rute, Transaksi.jam_keberangkatan,
+                                      Transaksi.layanan).distinct()).tuples()
+        n_jad = pastikan_jadwal(db, kombinasi)
+        db.commit()
+        if n_kal or n_jad:
+            log.info("Migrasi: %d tanggal kalender & %d jadwal ditambahkan", n_kal, n_jad)
+    finally:
+        db.close()
+
+
+def _tambah_foreign_key_postgres():
+    if engine.dialect.name != "postgresql":
+        return  # SQLite tidak mendukung ADD CONSTRAINT; database baru sudah dibuat lengkap.
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for tabel, daftar in FK_POSTGRES.items():
+            ada = {fk["name"] for fk in insp.get_foreign_keys(tabel)}
+            for nama, definisi in daftar:
+                if nama not in ada and not (tabel == "rute" and _fk_kolom_ada(insp, "rute", "cabang_tujuan")):
+                    conn.execute(text(f"ALTER TABLE {tabel} ADD CONSTRAINT {nama} FOREIGN KEY {definisi}"))
+                    log.info("Migrasi: foreign key %s ditambahkan", nama)
+
+
+def _fk_kolom_ada(insp, tabel, kolom):
+    return any(fk["constrained_columns"] == [kolom] for fk in insp.get_foreign_keys(tabel))
+
+
 def jalankan_migrasi():
     Base.metadata.create_all(bind=engine)
 
@@ -40,3 +96,9 @@ def jalankan_migrasi():
             if nama in index_ada:
                 conn.execute(text(f"DROP INDEX {nama}"))
                 log.info("Migrasi: index %s dihapus", nama)
+        # Tabel jadwal lama belum punya unique constraint yang dibutuhkan foreign key gabungan.
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_jadwal_rute_jam_layanan "
+                          "ON jadwal (id_rute, jam_keberangkatan, layanan)"))
+
+    isi_referensi_dari_transaksi()
+    _tambah_foreign_key_postgres()

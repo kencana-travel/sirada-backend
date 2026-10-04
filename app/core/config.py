@@ -14,3 +14,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
 VERIFIKASI_EMAIL_EXPIRE_JAM = 24
 RESET_PASSWORD_EXPIRE_MENIT = 30
+
+# Syarat minimal jumlah baris transaksi sebelum analisis boleh dijalankan (flowchart:
+# "data lengkap & jumlah >= 100.000 baris").
+MIN_BARIS_ANALISIS = int(os.getenv("MIN_BARIS_ANALISIS", "100000"))

@@ -15,7 +15,8 @@ from pathlib import Path
 from sqlalchemy import func, text
 from app.core.database import SessionLocal
 from app.core.migrate import jalankan_migrasi
-from app.models.models import Armada, Cabang, Jadwal, JenisPaket, Member, Pengguna, Rute, Transaksi
+from app.models.models import (Armada, Cabang, Jadwal, JenisPaket, Member, Pengguna,
+                               PermintaanLaporan, Rute, Transaksi)
 
 CSV_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "kencana_transaksi_gabungan.csv"
 
@@ -31,6 +32,7 @@ def _hapus_data_referensi() -> None:
     db = SessionLocal()
     try:
         db.query(Pengguna).update({Pengguna.id_cabang: None}, synchronize_session=False)
+        db.query(PermintaanLaporan).update({PermintaanLaporan.cabang: None}, synchronize_session=False)
         if db.bind.dialect.name == "postgresql":
             # DELETE di Postgres hanya menandai baris sebagai mati — ruang disk tidak kembali
             # sampai VACUUM. TRUNCATE langsung membebaskan ruangnya. (Tabel transaksi tidak
