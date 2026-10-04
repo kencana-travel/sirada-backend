@@ -18,7 +18,7 @@ def rute_tersedia(db: Session = Depends(get_db), _user: Pengguna = Depends(get_c
 @router.post("/run")
 def run(payload: ForecastingRunRequest, db: Session = Depends(get_db),
         _user: Pengguna = Depends(require_roles("Admin"))):
-    """Sesuai tombol 'Jalankan Model AI' - jalankan Exponential Smoothing (Holt-Winters) untuk 1 rute."""
+    """Sesuai tombol 'Jalankan Model AI' - jalankan ARIMA untuk 1 rute."""
     try:
         return svc.jalankan_forecast(db, payload.rute, payload.horizon_hari)
     except ValueError as e:

@@ -169,9 +169,13 @@ class ForecastPoint(BaseModel):
 
 class ForecastingOut(BaseModel):
     rute: str
+    model: str
+    adf_p_value: float
     prediksi_periode_berikutnya: float
     akurasi_persen: float
     mape_persen: float
+    mae: float
+    rmse: float
     rekomendasi_unit_tambahan: int
     deret: List[ForecastPoint]
 

@@ -21,8 +21,8 @@ Frontend (UI/UX yang sudah ada)
         v
 +-------------------------+        +----------------------+
 |  Service Layer          | -----> | scikit-learn (KMeans) |
-|  - segmentasi_service   |        | statsmodels (Holt-    |
-|  - forecasting_service  |        |   Winters/ExpSmooth)  |
+|  - segmentasi_service   |        | statsmodels (ARIMA)   |
+|  - forecasting_service  |        |                      |
 |  - performa_service     |        +----------------------+
 +-------------------------+
         |
@@ -50,7 +50,7 @@ tinggal ganti `DATABASE_URL` env var ke PostgreSQL untuk produksi tanpa ubah kod
 | Dashboard | `GET /api/dashboard/summary`, `/distribusi-member`, `/aktivitas-terkini` |
 | Data Transaksi | `GET /api/transaksi` (filter+pagination), `POST /api/transaksi`, `GET /api/transaksi/export` |
 | Segmentasi | `GET /api/segmentasi/ringkasan`, `GET /api/segmentasi/cluster` (RFM+K-Means) |
-| Forecasting | `GET /api/forecasting/rute-tersedia`, `POST /api/forecasting/run` (Holt-Winters) |
+| Forecasting | `GET /api/forecasting/rute-tersedia`, `POST /api/forecasting/run` (ARIMA) |
 | Performa Rute | `GET /api/performa-rute`, `GET /api/performa-rute/vip-vs-reguler` |
 
 Dokumentasi interaktif lengkap (Swagger) otomatis tersedia di `/docs` setelah server jalan.
@@ -60,9 +60,9 @@ Dokumentasi interaktif lengkap (Swagger) otomatis tersedia di `/docs` setelah se
 - **Segmentasi Pasar**: RFM (Recency/Frequency/Monetary) dihitung per pelanggan,
   lalu di-cluster pakai **K-Means** (scikit-learn), diberi label Tier Platinum/Gold/Silver/Calon Member
   berdasarkan ranking nilai monetary tiap cluster.
-- **Forecasting Demand**: **Holt-Winters Exponential Smoothing** (statsmodels) per rute —
-  alternatif yang lebih ringan dari ARIMA/Prophet tapi tetap menangkap tren & musiman mingguan.
-  Akurasi dihitung otomatis lewat train/test split 14 hari terakhir (MAPE).
+- **Forecasting Demand**: **ARIMA(p, d, q)** (statsmodels) per rute. Nilai d ditentukan dari uji
+  ADF (differencing maks. 2 kali), p dan q dipilih dari kandidat 0-2 dengan AIC terkecil.
+  Akurasi dihitung lewat train/test split 14 hari terakhir (MAE, RMSE, MAPE).
 - **Performa Rute**: agregasi statistik deskriptif (total trip, load factor, perbandingan VIP vs Reguler).
 
 ## 5. Role & Akses (sesuai Use Case Diagram)
