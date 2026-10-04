@@ -188,3 +188,11 @@ class RiwayatImport(Base):
     baris_dimuat = Column(Integer, nullable=False, default=0)
     status = Column(String, nullable=False, default="berhasil")      # berhasil | gagal
     catatan = Column(String, nullable=True)
+
+
+class InfoSistem(Base):
+    """Pasangan kunci-nilai untuk status sistem, mis. sidik jari (hash) file CSV dataset yang
+    sedang dimuat, agar bootstrap tahu kapan dataset di repo berganti."""
+    __tablename__ = "info_sistem"
+    kunci = Column(String, primary_key=True)
+    nilai = Column(String, nullable=True)

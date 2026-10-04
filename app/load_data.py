@@ -135,7 +135,10 @@ def main(csv_path, reset=True):
         paket_val = d.get("Jenis Paket")
         nama = None
         if d["Jenis Transaksi"] == "Penumpang":
-            nama = buat_nama_acak(d["Kode Transaksi"])
+            # Pakai kolom "Nama Pelanggan" bila ada (data terkalibrasi); CSV lama tanpa kolom
+            # ini tetap didukung dengan nama acak.
+            nama_csv = d.get("Nama Pelanggan")
+            nama = nama_csv if isinstance(nama_csv, str) and nama_csv.strip() else                 buat_nama_acak(d["Kode Transaksi"])
         rec = Transaksi(
             id_transaksi=d["Kode Transaksi"],
             tanggal=datetime.strptime(d["Tanggal"], "%Y-%m-%d").date(),

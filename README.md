@@ -87,12 +87,11 @@ Dokumentasi interaktif lengkap (Swagger) otomatis tersedia di `/docs` setelah se
 # 1. Install dependency
 pip install -r requirements.txt
 
-# 2. Load data transaksi ke database (pakai data sintetis yang sudah kita buat sebelumnya,
-#    atau ganti dengan CSV data asli Kencana Travel dengan struktur kolom yang sama)
-python -m app.load_data data/kencana_transaksi_gabungan.csv
+# 2. (Opsional) buat ulang dataset sintetis terkalibrasi -> data/kencana_transaksi_gabungan.csv
+python scripts/buat_data_sintetis.py
 
-# 3. Buat akun login default (admin/owner/kepala outlet)
-python -m app.seed_users
+# 3. Migrasi + muat data + akun awal. Data dimuat ulang otomatis bila file CSV berganti.
+python -m app.bootstrap
 
 # 4. Jalankan server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -109,39 +108,16 @@ Buka `http://localhost:8000/docs` untuk mencoba semua endpoint langsung dari bro
 
 **PENTING**: ganti `JWT_SECRET` (env var) dan password default sebelum dipakai di lingkungan nyata.
 
-## 7. Catatan & Keterbatasan (jujur, biar tidak salah paham)
+## 7. Catatan & Keterbatasan
 
-1. **Nama pelanggan pada data sintetis dibuat acak per transaksi** (bukan ID pelanggan asli
-   yang konsisten), karena data mentah dari Kencana tidak menyertakan data pribadi penumpang.
-   Efeknya, hasil RFM per "pelanggan" pada dataset demo ini kurang representatif
-   (satu nama bisa kebagian ribuan transaksi karena hanya ~190 kombinasi nama yang dipakai
-   generator). **Begitu data transaksi asli Kencana (dengan ID pelanggan/nomor HP yang konsisten)
-   tersedia, cukup ganti sumber data di `load_data.py` — seluruh logic RFM+K-Means tidak perlu diubah.**
-2. **Endpoint `performa-rute` dan `segmentasi/cluster` memuat seluruh tabel transaksi ke pandas**
-   di setiap request (~3-4 detik dengan 464rb baris di SQLite). Untuk produksi dengan data
-   terus bertambah, sebaiknya ditambah caching (mis. hasil dihitung berkala lewat scheduled job,
-   bukan real-time tiap request) atau pre-aggregation di level database.
-3. **Harga tiket di endpoint tambah-transaksi masih hardcode** (Rp105.000) — idealnya diambil
-   dari tabel tarif per rute+layanan; belum ada tabel tarif terpisah di skema ini.
-4. Belum ada endpoint **generate PDF** untuk tombol "Export Laporan PDF" di UI — baru tersedia
-   export CSV. Bisa ditambah pakai library seperti `reportlab`/`weasyprint` bila dibutuhkan.
-5. Ini backend siap-jalan untuk skala development/demo. Untuk produksi: pindah ke PostgreSQL
-   (tinggal ganti `DATABASE_URL`), pasang rate-limiting, dan audit ulang secret key JWT.
-
-## Deploy ke Railway
-
-1. Di project Railway: **New → Database → PostgreSQL**, lalu **New → GitHub Repo** (repo backend ini).
-2. Tab **Variables** service backend:
-   | Variabel | Nilai |
-   |---|---|
-   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
-   | `JWT_SECRET` | string acak panjang (`python -c "import secrets; print(secrets.token_urlsafe(48))"`) |
-   | `FRONTEND_URL` | `https://<frontend>.up.railway.app` (untuk link email & CORS) |
-   | `RESEND_API_KEY` | API key Resend |
-   | `MAIL_FROM` | `SIRADA Kencana <onboarding@resend.dev>` atau alamat di domain terverifikasi |
-   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | akun Admin pertama (email asli, password ≥ 8 karakter) |
-3. **Settings → Networking → Generate Domain**.
-
-Konfigurasi build/start ada di `railway.json`. Saat start, `python -m app.bootstrap` menjalankan migrasi,
-memuat `data/kencana_transaksi_gabungan.csv` bila database masih kosong (deploy pertama, ±2–5 menit),
-dan membuat akun Admin pertama. Deploy berikutnya melewati langkah pemuatan data.
+1. **Dataset adalah data sintetis yang dikalibrasi dari laporan bulanan outlet Kencana Travel**
+   (Januari-Agustus 2026; outlet Solo, Semarang, Tayu), dibuat oleh `scripts/buat_data_sintetis.py`.
+   Laporan asli hanya berupa rekap bulanan per outlet (tanpa transaksi, pelanggan, atau data harian),
+   jadi transaksi per pemesanan dibangkitkan dengan volume penumpang, trip, kapasitas, tarif rata-rata,
+   porsi diskon, dan pola bulanan yang mengikuti laporan tersebut. Periode 1 Sep 2023 - 31 Agu 2026,
+   257.228 transaksi, ~14 ribu pelanggan, tanpa transaksi paket (laporan asli: paket = 0).
+2. **Nama pelanggan dipakai sebagai ID pelanggan** untuk RFM. Bila data transaksi asli Kencana
+   (dengan ID/nomor HP pelanggan) tersedia, cukup import CSV dengan kolom "Nama Pelanggan" berisi ID
+   tersebut — logic RFM + K-Means tidak perlu diubah.
+3. **Cache analisis di memori proses**: hasil berat (forecasting, segmentasi, performa) disimpan per
+   proses dan dihitung ulang setelah restart (dipanaskan otomatis di thread latar).
