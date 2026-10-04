@@ -17,6 +17,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from sklearn import config_context
 from sklearn.cluster import KMeans
 from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import MinMaxScaler
@@ -30,6 +31,7 @@ from app.models.models import Member, Rute, Transaksi
 SILHOUETTE_MIN_VALID = 0.5
 K_MIN, K_MAX = 2, 8
 SILHOUETTE_SAMPLE = 10000
+WORKING_MEMORY_MB = 32
 RANDOM_STATE = 42
 
 # Cache hasil di memori: kunci = (cabang, n_clusters, jumlah baris, tanggal terakhir).
@@ -119,7 +121,11 @@ def _evaluasi(X: np.ndarray, labels: np.ndarray) -> tuple[float | None, float | 
     if len(set(labels)) < 2:
         return None, None
     sample = SILHOUETTE_SAMPLE if len(X) > SILHOUETTE_SAMPLE else None
-    sil = float(silhouette_score(X, labels, sample_size=sample, random_state=RANDOM_STATE))
+    # Silhouette menghitung jarak antar-semua-titik. Tanpa batas, 10.000 pelanggan butuh
+    # ±1,5 GB RAM (melebihi batas container Railway). working_memory memaksa sklearn
+    # menghitungnya per potongan kecil (MB) dengan hasil yang sama.
+    with config_context(working_memory=WORKING_MEMORY_MB):
+        sil = float(silhouette_score(X, labels, sample_size=sample, random_state=RANDOM_STATE))
     dbi = float(davies_bouldin_score(X, labels))
     return sil, dbi
 
