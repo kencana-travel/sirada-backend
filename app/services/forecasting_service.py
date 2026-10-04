@@ -12,6 +12,7 @@ BAB II subbab 2.8:
                                  libur sekolah)
        - Holt-Winters aditif   : tren teredam + musiman mingguan
   4. evaluasi pada data uji (28 hari terakhir) dengan MAE, RMSE, MAPE; pemenang = MAPE terkecil
+     (diagnostic checking: uji Ljung-Box lag 14 pada residual model terpilih)
   5. model pemenang dilatih ulang pada seluruh data latih lalu forecast ke depan
   6. MAPE diklasifikasikan menurut Lewis (1982)
 """
@@ -218,6 +219,28 @@ def _metrik(aktual: np.ndarray, prediksi: np.ndarray) -> dict:
     nonzero = aktual != 0
     mape = float(np.mean(np.abs(galat[nonzero] / aktual[nonzero])) * 100) if nonzero.any() else 0.0
     return {"mae": mae, "rmse": rmse, "mape": mape}
+
+
+LAG_LJUNG_BOX = 14  # dua siklus mingguan
+ALPHA_LJUNG_BOX = 0.05
+
+
+def _uji_residual(model) -> dict | None:
+    """Diagnostic checking: uji Ljung-Box pada residual model terpilih.
+    H0 = residual tidak berautokorelasi (white noise). p-value > 0,05 berarti H0 tidak ditolak,
+    sehingga pola data dianggap sudah tertangkap model. Residual awal (masa pemanasan
+    differencing/musiman) dibuang agar tidak mendistorsi uji."""
+    try:
+        from statsmodels.stats.diagnostic import acorr_ljungbox
+        resid = pd.Series(np.asarray(model.resid, dtype=float)).iloc[2 * MUSIM:]
+        resid = resid[np.isfinite(resid)]
+        if len(resid) <= LAG_LJUNG_BOX * 2:
+            return None
+        p_value = float(acorr_ljungbox(resid, lags=[LAG_LJUNG_BOX], return_df=True)["lb_pvalue"].iloc[0])
+        return {"metode": "Ljung-Box", "lag": LAG_LJUNG_BOX, "p_value": round(p_value, 4),
+                "lolos": bool(p_value > ALPHA_LJUNG_BOX)}
+    except Exception:
+        return None
 
 
 def kategori_mape(mape: float) -> str:
@@ -434,6 +457,7 @@ def jalankan_forecast(db: Session, nama_rute: str, horizon_hari: int = 30,
         "rekomendasi_unit_tambahan": rek["rekomendasi_unit_tambahan"],
         "catatan_jadwal": rek["catatan_jadwal"],
         "kapasitas": rek["kapasitas"],
+        "uji_residual": _uji_residual(model_final),
         "deret": deret,
         "durasi_detik": round(time.perf_counter() - mulai_waktu, 1),
         "dari_cache": False,
