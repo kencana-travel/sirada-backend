@@ -1,6 +1,12 @@
-"""Pengiriman email transaksional (verifikasi, reset password, status akun) via Resend."""
+"""Pengiriman email transaksional (verifikasi, reset password, status akun) via Brevo
+(atau Resend bila hanya RESEND_API_KEY yang diisi)."""
 import html
+import json
 import logging
+import urllib.error
+import urllib.request
+from email.utils import parseaddr
+
 import resend
 from app.core import config
 
@@ -41,16 +47,42 @@ def _template(judul: str, paragraf: list[str], tombol_teks: str | None = None,
 </div>"""
 
 
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+
+
+def _kirim_brevo(ke: str, subjek: str, isi_html: str) -> None:
+    nama_pengirim, email_pengirim = parseaddr(config.MAIL_FROM)
+    data = json.dumps({
+        "sender": {"name": nama_pengirim or "SIRADA Kencana", "email": email_pengirim},
+        "to": [{"email": ke}],
+        "subject": subjek,
+        "htmlContent": isi_html,
+    }).encode()
+    req = urllib.request.Request(BREVO_URL, data=data, method="POST", headers={
+        "api-key": config.BREVO_API_KEY, "content-type": "application/json",
+        "accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            log.info("Email terkirim via Brevo ke %s (%s): %s", ke, subjek, resp.read().decode()[:200])
+    except urllib.error.HTTPError as e:
+        # Pesan Brevo menjelaskan penyebabnya (sender belum diverifikasi, IP belum diizinkan, dll.)
+        raise RuntimeError(f"Brevo HTTP {e.code}: {e.read().decode(errors='replace')[:500]}") from e
+
+
 def kirim_email(ke: str, subjek: str, isi_html: str, link: str | None = None) -> None:
     """Kirim email. Dipanggil lewat BackgroundTasks, jadi kegagalan hanya dicatat ke log
     (tidak membatalkan request) — pengguna bisa meminta kirim ulang."""
-    if not config.RESEND_API_KEY:
-        log.warning("[EMAIL DEV MODE] RESEND_API_KEY kosong, email tidak dikirim.\n"
+    if not config.BREVO_API_KEY and not config.RESEND_API_KEY:
+        log.warning("[EMAIL DEV MODE] BREVO_API_KEY/RESEND_API_KEY kosong, email tidak dikirim.\n"
                     "  Ke: %s\n  Subjek: %s\n  Link: %s", ke, subjek, link or "-")
         return
     try:
-        resend.api_key = config.RESEND_API_KEY
-        resend.Emails.send({"from": config.MAIL_FROM, "to": [ke], "subject": subjek, "html": isi_html})
+        if config.BREVO_API_KEY:
+            _kirim_brevo(ke, subjek, isi_html)
+        else:
+            resend.api_key = config.RESEND_API_KEY
+            resend.Emails.send({"from": config.MAIL_FROM, "to": [ke], "subject": subjek,
+                                "html": isi_html})
     except Exception:
         log.exception("Gagal mengirim email ke %s (subjek: %s)", ke, subjek)
 

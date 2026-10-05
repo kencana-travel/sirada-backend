@@ -1,12 +1,15 @@
 """Konfigurasi email & URL frontend, dibaca dari environment variable."""
 import os
 
-# API key Resend (https://resend.com/api-keys). Kosong = mode dev: email tidak dikirim,
-# isi & link-nya dicetak ke log server supaya alur tetap bisa dites.
+# Penyedia email (dipilih otomatis dari API key yang diisi, Brevo didahulukan):
+# - Brevo (https://app.brevo.com -> SMTP & API -> API Keys). Alamat di MAIL_FROM harus sudah
+#   diverifikasi sebagai sender di Brevo, tapi tidak perlu punya domain sendiri.
+# - Resend (lama). Tanpa domain terverifikasi hanya bisa mengirim ke email pemilik akun.
+# Keduanya kosong = mode dev: email tidak dikirim, isi & link-nya dicetak ke log server.
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
-# Alamat pengirim. onboarding@resend.dev hanya bisa mengirim ke email pemilik akun Resend;
-# untuk mengirim ke siapa pun, verifikasi domain di Resend lalu ganti ke no-reply@domainanda.
+# Alamat pengirim, format "Nama <email>". Untuk Brevo: email sender yang sudah diverifikasi.
 MAIL_FROM = os.getenv("MAIL_FROM", "SIRADA Kencana <onboarding@resend.dev>")
 
 # Dipakai untuk membangun link di dalam email (verifikasi & reset password).
